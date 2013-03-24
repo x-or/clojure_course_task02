@@ -21,14 +21,16 @@
 (defn directory-worker [directory pattern]
   (try
     (let [contents (.listFiles directory)]
-      (dorun (->> contents
-                  (filter #(.isDirectory %))
-                  (map enqueue-directory)))
-      (dorun (->> contents
-                  (filter #(.isFile %))
-                  (map #(.getName %))
-                  (filter #(re-matches pattern %))
-                  (map collect-matched-file))))
+      (->> contents
+           (filter #(.isDirectory %))
+           (map enqueue-directory) 
+           dorun)
+      (->> contents
+           (filter #(.isFile %))
+           (map #(.getName %))
+           (filter #(re-matches pattern %))
+           (map collect-matched-file) 
+           dorun))
   (finally 
     (dosync (alter live-workers-count dec)))))
 
