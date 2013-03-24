@@ -5,6 +5,8 @@
 (def live-workers-count (ref 0))
 (def directory-pool (ref '()))
 (def matched-files (atom '()))
+(def max-live-workers-sleep-ms 50)
+(def few-live-workers-sleep-ms 10)
 
 (defn enqueue-directory [directory]
   (dosync (alter directory-pool conj directory)))
@@ -51,9 +53,9 @@
           live-workers (filter (comp not realized?) workers)
           live-workers-count (count live-workers)]
       (cond
-        (>= live-workers-count max-workers-count) (do (Thread/sleep 50) (recur live-workers))
+        (>= live-workers-count max-workers-count) (do (Thread/sleep max-live-workers-sleep-ms) (recur live-workers))
         (seq last-directory-pool) (recur (conj live-workers (yield-some-directory pattern)))
-        ((comp not zero?) live-workers-count) (do (Thread/sleep 10) (recur live-workers))
+        ((comp not zero?) live-workers-count) (do (Thread/sleep few-live-workers-sleep-ms) (recur live-workers))
         :else
           (do
             (assert (empty? last-directory-pool)
@@ -65,9 +67,9 @@
     (let [[last-directory-pool last-live-workers-count] (dosync [(ensure directory-pool) (ensure live-workers-count)])]
       (assert (>= last-live-workers-count 0))
       (cond
-        (>= last-live-workers-count max-workers-count) (do (Thread/sleep 50) (recur))
+        (>= last-live-workers-count max-workers-count) (do (Thread/sleep max-live-workers-sleep-ms) (recur))
         (seq last-directory-pool) (do (yield-some-directory pattern) (recur))
-        ((comp not zero?) last-live-workers-count) (do (Thread/sleep 10) (recur))
+        ((comp not zero?) last-live-workers-count) (do (Thread/sleep few-live-workers-sleep-ms) (recur))
         :else 
           (do
             (assert (empty? last-directory-pool)
