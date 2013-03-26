@@ -2,7 +2,6 @@
   (:gen-class))
 
 (def max-workers-count 10)
-(def live-workers-count (ref 0))
 (def directory-pool (ref '()))
 (def matched-files (atom '()))
 (def max-live-workers-sleep-ms 50)
@@ -21,32 +20,22 @@
   (swap! matched-files conj file-name))
  
 (defn directory-worker [directory pattern]
-  (try
-    (let [contents (.listFiles directory)]
-      (->> contents
-           (filter #(.isDirectory %))
-           (map enqueue-directory) 
-           dorun)
-      (->> contents
-           (filter #(.isFile %))
-           (map #(.getName %))
-           (filter #(re-matches pattern %))
-           (map collect-matched-file) 
-           dorun))
-  (finally 
-    (dosync (alter live-workers-count dec)))))
-
-(defn working-directory []
-  (dosync
-    (when-let [directory (pop-directory)]
-      (alter live-workers-count inc)
-      directory)))
+  (let [contents (.listFiles directory)]
+    (->> contents
+         (filter #(.isDirectory %))
+         (map enqueue-directory) 
+         dorun)
+    (->> contents
+         (filter #(.isFile %))
+         (map #(.getName %))
+         (filter #(re-matches pattern %))
+         (map collect-matched-file) 
+         dorun)))
 
 (defn yield-some-directory [pattern]
-  (when-let [wd (working-directory)]
+  (when-let [wd (pop-directory)]
     (future (directory-worker wd pattern))))
 
-;;; bit safer version
 (defn find-files-loop [pattern]
   (loop [workers '()]
     (let [last-directory-pool @directory-pool
@@ -60,20 +49,6 @@
           (do
             (assert (empty? last-directory-pool)
             (assert (empty? live-workers))))))))
-
-;;; potentially non-safe version
-(defn find-files-loop' [pattern]
-  (loop []
-    (let [[last-directory-pool last-live-workers-count] (dosync [(ensure directory-pool) (ensure live-workers-count)])]
-      (assert (>= last-live-workers-count 0))
-      (cond
-        (>= last-live-workers-count max-workers-count) (do (Thread/sleep max-live-workers-sleep-ms) (recur))
-        (seq last-directory-pool) (do (yield-some-directory pattern) (recur))
-        ((comp not zero?) last-live-workers-count) (do (Thread/sleep few-live-workers-sleep-ms) (recur))
-        :else 
-          (do
-            (assert (empty? last-directory-pool)
-            (assert (zero? last-live-workers-count))))))))
 
 (defn find-files [file-name path]
   (enqueue-directory (clojure.java.io/file path))
