@@ -5,8 +5,8 @@
 (def max-workers-count 8)
 (def directory-pool (ref '()))
 (def matched-files (atom '()))
-(def max-live-workers-sleep-ms 50)
-(def few-live-workers-sleep-ms 10)
+(def max-live-workers-sleep-ms 1)
+(def few-live-workers-sleep-ms 1)
 
 (defn enqueue-directory [directory]
   (dosync (alter directory-pool conj directory)))
