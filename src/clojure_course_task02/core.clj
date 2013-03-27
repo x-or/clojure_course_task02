@@ -1,7 +1,8 @@
 (ns clojure-course-task02.core
   (:gen-class))
 
-(def max-workers-count 10)
+(def group-size 20)
+(def max-workers-count 8)
 (def directory-pool (ref '()))
 (def matched-files (atom '()))
 (def max-live-workers-sleep-ms 50)
@@ -10,31 +11,32 @@
 (defn enqueue-directory [directory]
   (dosync (alter directory-pool conj directory)))
  
-(defn pop-directory []
+(defn pop-directories [n]
   (dosync
-    (let [first-directory (first (ensure directory-pool))]
-      (alter directory-pool rest)
-      first-directory)))
+    (let [directories (take n (ensure directory-pool))]
+      (alter directory-pool #(drop n %))
+      directories)))
 
 (defn collect-matched-file [file-name]
   (swap! matched-files conj file-name))
  
-(defn directory-worker [directory pattern]
-  (let [contents (.listFiles directory)]
-    (->> contents
-         (filter #(.isDirectory %))
-         (map enqueue-directory) 
-         dorun)
-    (->> contents
-         (filter #(.isFile %))
-         (map #(.getName %))
-         (filter #(re-matches pattern %))
-         (map collect-matched-file) 
-         dorun)))
+(defn directory-worker [directories pattern]
+  (doseq [directory directories]
+    (let [contents (.listFiles directory)]
+      (->> contents
+           (filter #(.isDirectory %))
+           (map enqueue-directory) 
+           dorun)
+      (->> contents
+           (filter #(.isFile %))
+           (map #(.getName %))
+           (filter #(re-matches pattern %))
+           (map collect-matched-file) 
+           dorun))))
 
-(defn yield-some-directory [pattern]
-  (when-let [wd (pop-directory)]
-    (future (directory-worker wd pattern))))
+(defn yield-directory-group [pattern]
+  (when-let [dirs (seq (pop-directories group-size))]
+    (future (directory-worker dirs pattern))))
 
 (defn find-files-loop [pattern]
   (loop [workers '()]
@@ -43,7 +45,7 @@
           live-workers-count (count live-workers)]
       (cond
         (>= live-workers-count max-workers-count) (do (Thread/sleep max-live-workers-sleep-ms) (recur live-workers))
-        (seq last-directory-pool) (recur (conj live-workers (yield-some-directory pattern)))
+        (seq last-directory-pool) (recur (conj live-workers (yield-directory-group pattern)))
         ((comp not zero?) live-workers-count) (do (Thread/sleep few-live-workers-sleep-ms) (recur live-workers))
         :else
           (do
