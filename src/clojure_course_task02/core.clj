@@ -58,25 +58,27 @@
   @matched-files)
 
 (defn usage []
-  (println "Usage: $ run.sh file_name path"))
+  (println "Usage: $ run.sh file_name path [-benchmarking]"))
 
-(defn -main [file-name path & benchmarking]
-  (if (nil? (first benchmarking))
-    (if (or (nil? file-name)
-            (nil? path))
+(defn -main [& args]
+  (let [[file-name path benchmarking?] args]
+    (cond
+      (or (nil? file-name) (nil? path)) 
       (usage)
+      (nil? benchmarking?)
       (do
         (println "Searching for " file-name " in " path "...")
         (dorun (map println (find-files file-name path)))
-        (shutdown-agents) ; устраняет продолжительный вис в конце
-        (println "*** done ***")))
-    (do 
-      (print "file-seq algoritm: ")
-      (time (let [re (re-pattern file-name)] 
-        (->> (file-seq (clojure.java.io/file path))
-             (map #(.getName %))
-             (filter #(re-matches re %))
-             (count))))
-      (print "multi-core algoritm: ")
-      (time (count (find-files file-name path)))
-      (shutdown-agents))))
+        (shutdown-agents)
+        (println "*** done ***"))
+      :else
+      (do 
+        (print "file-seq algoritm: ")
+        (time (let [re (re-pattern file-name)] 
+          (->> (file-seq (clojure.java.io/file path))
+               (map #(.getName %))
+               (filter #(re-matches re %))
+               (count))))
+        (print "multi-core algoritm: ")
+        (time (count (find-files file-name path)))
+        (shutdown-agents)))))
