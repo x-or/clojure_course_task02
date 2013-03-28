@@ -2,7 +2,7 @@
   (:gen-class))
 
 (def group-size 20)
-(def max-workers-count 8)
+(def ^:dynamic *max-workers-count* 8)
 (def directory-pool (ref '()))
 (def matched-files (atom '()))
 (def max-live-workers-sleep-ms 1)
@@ -44,7 +44,7 @@
           live-workers (filter (comp not realized?) workers)
           live-workers-count (count live-workers)]
       (cond
-        (>= live-workers-count max-workers-count) (do (Thread/sleep max-live-workers-sleep-ms) (recur live-workers))
+        (>= live-workers-count *max-workers-count*) (do (Thread/sleep max-live-workers-sleep-ms) (recur live-workers))
         (seq last-directory-pool) (recur (conj live-workers (yield-directory-group pattern)))
         ((comp not zero?) live-workers-count) (do (Thread/sleep few-live-workers-sleep-ms) (recur live-workers))
         :else
@@ -60,6 +60,12 @@
 (defn usage []
   (println "Usage: $ run.sh file_name path [-benchmarking]"))
 
+(defn cpu-cores-count [] 
+  (.. Runtime getRuntime availableProcessors))
+
+(defn estimate-workers-count [] 
+  (cpu-cores-count))
+
 (defn -main [& args]
   (let [[file-name path benchmarking?] args]
     (cond
@@ -68,7 +74,8 @@
       (nil? benchmarking?)
       (do
         (println "Searching for " file-name " in " path "...")
-        (dorun (map println (find-files file-name path)))
+        (binding [*max-workers-count* (estimate-workers-count)]
+          (dorun (map println (find-files file-name path))))
         (shutdown-agents)
         (println "*** done ***"))
       :else
@@ -80,5 +87,6 @@
                (filter #(re-matches re %))
                (count))))
         (print "multi-core algoritm: ")
-        (time (count (find-files file-name path)))
+        (binding [*max-workers-count* (estimate-workers-count)]
+          (time (count (find-files file-name path))))
         (shutdown-agents)))))
